@@ -230,16 +230,3 @@ Body: multipart form with a `.pdf`, `.txt`, `.md`, or `.docx` file.
 - I cannot send or receive emails. How do I troubleshoot this?
 
 ---
-
-## Docker
-
-```bash
-docker build -t it-support-copilot .
-docker run -p 8080:8080 --env-file .env it-support-copilot
-```
-
----
-
-## License
-
-MIT License — see [LICENSE](LICENSE)
