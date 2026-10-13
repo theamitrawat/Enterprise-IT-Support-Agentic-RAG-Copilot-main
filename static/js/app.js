@@ -195,14 +195,24 @@ async function askAgent(question) {
     usedSSE   = true;
 
     await new Promise((resolve, reject) => {
-      // 90-second watchdog — Render free tier can be slow on cold start
+      // 3-minute watchdog — Render free tier cold start can take 90-120s
       const watchdog = setTimeout(() => {
         es.close();
-        reject(new Error("Request timed out. The server may be waking from sleep — please try again in a moment."));
-      }, 90000);
+        reject(new Error("The server is taking longer than usual. Please try again — it should be faster now that it's warmed up."));
+      }, 180000);
+
+      // Show a live status message after 10s so user knows it's still working
+      let statusTimer = setTimeout(() => {
+        if (!thinkingDone) {
+          textEl.innerHTML = `<div class="thinking-dots"><span></span><span></span><span></span></div>
+            <div style="font-size:12px;color:var(--text-dim);margin-top:8px">
+              ⏳ Server is waking up from sleep — this first request takes ~60s. Subsequent requests will be fast.
+            </div>`;
+        }
+      }, 10000);
 
       es.onmessage = (e) => {
-        if (e.data === "[DONE]") { clearTimeout(watchdog); es.close(); resolve(); return; }
+        if (e.data === "[DONE]") { clearTimeout(watchdog); clearTimeout(statusTimer); es.close(); resolve(); return; }
 
         let evt;
         try { evt = JSON.parse(e.data); } catch { return; }
@@ -215,7 +225,7 @@ async function askAgent(question) {
           citations  = evt.citations   || [];
 
         } else if (evt.type === "token") {
-          if (!thinkingDone) { textEl.innerHTML = ""; thinkingDone = true; }
+          if (!thinkingDone) { clearTimeout(statusTimer); textEl.innerHTML = ""; thinkingDone = true; }
           streamText += evt.content;
           // Plain text while streaming to avoid flashing markdown symbols
           textEl.innerHTML = escapeHtml(streamText).replace(/\n/g, "<br>")
@@ -227,13 +237,13 @@ async function askAgent(question) {
           citations  = evt.citations   || citations;
 
         } else if (evt.type === "error") {
-          clearTimeout(watchdog);
+          clearTimeout(watchdog); clearTimeout(statusTimer);
           reject(new Error(evt.content || "Agent error"));
         }
       };
 
       es.onerror = () => {
-        clearTimeout(watchdog);
+        clearTimeout(watchdog); clearTimeout(statusTimer);
         es.close();
         // If we already got tokens, treat connection close as normal completion
         if (streamText) { resolve(); } else { reject(new Error("SSE_FAILED")); }
