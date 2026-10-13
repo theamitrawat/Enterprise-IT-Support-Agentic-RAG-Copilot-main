@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Enterprise IT Support powered by Agentic RAG" />
+  <title>{{ app_name }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/style.css" />
+  <!-- markdown renderer -->
+  <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
+</head>
+<body>
+
+  <!-- ── Sidebar ── -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-inner">
+      <div class="sidebar-brand">
+        <div class="brand-logo">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" fill="currentColor"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </div>
+        <span class="brand-text">IT Copilot</span>
+      </div>
+
+      <button class="new-chat-btn" id="newChatBtn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        New chat
+      </button>
+
+      <div class="sidebar-section-label">Workflow</div>
+      <div class="workflow-steps">
+        <div class="wf-step"><span class="wf-dot"></span>Route question</div>
+        <div class="wf-step"><span class="wf-dot"></span>Retrieve private KB</div>
+        <div class="wf-step"><span class="wf-dot"></span>Grade evidence</div>
+        <div class="wf-step"><span class="wf-dot"></span>Web fallback</div>
+        <div class="wf-step"><span class="wf-dot"></span>Rewrite &amp; retry</div>
+        <div class="wf-step"><span class="wf-dot"></span>Grounded answer</div>
+      </div>
+    </div>
+
+    <div class="sidebar-footer">
+      <button id="openUpload" class="sidebar-action-btn">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        Add document
+      </button>
+    </div>
+  </aside>
+
+  <!-- ── Main ── -->
+  <div class="main-wrap">
+
+    <!-- Topbar -->
+    <header class="topbar">
+      <button class="menu-btn" id="menuBtn" aria-label="Toggle sidebar">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+      <div class="topbar-title">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" fill="currentColor"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        IT Copilot
+      </div>
+      <div class="topbar-actions">
+        <div class="status-pill">
+          <span class="status-dot"></span>
+          <span>Online</span>
+        </div>
+        <button id="themeToggle" class="icon-btn" aria-label="Toggle theme">
+          <svg class="icon-moon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          <svg class="icon-sun" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Chat -->
+    <main class="chat-main" id="chatMain">
+
+      <!-- Welcome screen (shown when no messages) -->
+      <div class="welcome" id="welcome">
+        <div class="welcome-logo">
+          <svg width="44" height="44" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" fill="currentColor"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+        </div>
+        <h1 class="welcome-title">Hello, I'm IT Copilot</h1>
+        <p class="welcome-sub">Powered by Agentic RAG — I search your company's private knowledge base first, then fall back to the web if needed.</p>
+
+        <div class="suggestion-grid">
+          <div class="suggestion-category">
+            <div class="suggestion-category-label">🔒 Access & Security</div>
+            <button class="suggestion-card" data-q="How do I connect to the company VPN from home?">How do I connect to the company VPN from home?</button>
+            <button class="suggestion-card" data-q="My VPN connection keeps failing, what should I check?">My VPN connection keeps failing, what should I check?</button>
+            <button class="suggestion-card" data-q="How do I reset my company password using self-service?">How do I reset my company password using self-service?</button>
+            <button class="suggestion-card" data-q="My account got locked after too many failed login attempts. What do I do?">My account got locked after too many failed attempts. What do I do?</button>
+          </div>
+          <div class="suggestion-category">
+            <div class="suggestion-category-label">💻 Hardware & Software</div>
+            <button class="suggestion-card" data-q="My laptop is running very slow. How do I fix it?">My laptop is running very slow. How do I fix it?</button>
+            <button class="suggestion-card" data-q="I lost my company laptop. What steps should I take immediately?">I lost my company laptop. What steps should I take immediately?</button>
+            <button class="suggestion-card" data-q="How do I install new software that is not in the Software Portal?">How do I install software not in the Software Portal?</button>
+            <button class="suggestion-card" data-q="I cannot send or receive emails. How do I troubleshoot this?">I cannot send or receive emails. How do I troubleshoot this?</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Messages -->
+      <div class="messages" id="messages"></div>
+
+    </main>
+
+    <!-- Composer -->
+    <div class="composer-outer">
+      <div class="composer-wrap">
+        <form class="composer" id="chatForm">
+          <textarea id="question" rows="1" placeholder="Ask IT Copilot anything…" aria-label="Question"></textarea>
+          <div class="composer-actions">
+            <button type="submit" class="send-btn" id="sendBtn" aria-label="Send" disabled>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2" fill="currentColor" stroke="none"/></svg>
+            </button>
+          </div>
+        </form>
+        <p class="composer-hint">IT Copilot uses private company KB + web search · Results may need IT validation</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Trace drawer (slide-in from right) ── -->
+  <div class="trace-drawer" id="traceDrawer">
+    <div class="trace-drawer-head">
+      <span class="trace-drawer-title">Agent Trace</span>
+      <button class="icon-btn" id="closeTrace">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="trace-steps" id="traceSteps"></div>
+    <div class="trace-source">
+      <span class="trace-source-label">Final source</span>
+      <strong id="traceSource">—</strong>
+    </div>
+  </div>
+  <div class="trace-overlay" id="traceOverlay"></div>
+
+  <!-- ── Upload Modal ── -->
+  <div id="uploadModal" class="modal-overlay hidden" role="dialog" aria-modal="true">
+    <div class="modal-box">
+      <div class="modal-head">
+        <h2 class="modal-title">Add Company Document</h2>
+        <button id="closeUpload" class="icon-btn" aria-label="Close">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <p class="modal-desc">Upload PDF, TXT, Markdown, or DOCX. The file will be chunked, embedded with HuggingFace, and stored in Pinecone.</p>
+
+      <label class="field-label">Admin API Key</label>
+      <input id="adminKey" type="password" class="field-input" placeholder="Enter admin key" autocomplete="off" />
+
+      <label class="field-label" style="margin-top:16px">Document</label>
+      <div class="file-zone" id="fileDrop">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" opacity="0.4"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        <span id="fileLabel">Click to browse or drag &amp; drop</span>
+        <span class="file-types">PDF · TXT · MD · DOCX</span>
+        <input id="fileInput" type="file" accept=".pdf,.txt,.md,.docx" />
+      </div>
+
+      <button id="uploadBtn" class="primary-btn" style="margin-top:18px">Index Document</button>
+      <div id="uploadStatus" class="upload-status"></div>
+    </div>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
