@@ -166,7 +166,15 @@ async function askAgent(question) {
     });
     clearTimeout(timeoutId);
 
-    const data = await res.json();
+    // Read raw text first so we can show useful errors if JSON parse fails
+    const rawText = await res.text();
+    let data;
+    try {
+      data = JSON.parse(rawText);
+    } catch {
+      // Server returned non-JSON — show the actual response body for debugging
+      throw new Error(`Server returned non-JSON (status ${res.status}): ${rawText.slice(0, 300)}`);
+    }
     if (!res.ok) throw new Error(data.detail || "Request failed");
 
     const answer     = data.answer      || "";
