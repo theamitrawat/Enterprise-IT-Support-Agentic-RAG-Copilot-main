@@ -23,6 +23,7 @@ def llm():
             model=settings.groq_model,
             temperature=0,
             groq_api_key=settings.groq_api_key,
+            request_timeout=25,   # fail fast — stay under Render's 30s proxy limit
         )
     return _llm
 
@@ -91,9 +92,7 @@ Otherwise return weak. JSON: {{"grade":"good"}} or {{"grade":"weak"}}.
     return {"kb_grade": grade.grade, "trace": add_trace(state, f"KB evidence grade -> {grade.grade.upper()}")}
 
 def after_kb(state: AgentState) -> Literal["generate_from_kb", "search_web"]:
-    return "generate_from_kb" if state["kb_grade"] == "good" else "search_web"
-
-def search_web(state: AgentState):
+    return "generate_from_kb" if state["kb_grade"] == "good" else "search_web"def search_web(state: AgentState):
     result = web_search_tool().invoke({"query": state["current_query"]})
     lines, citations = [], []
     if isinstance(result, dict):
@@ -157,8 +156,6 @@ Question: {state['question']}\n\nPrivate KB:\n{context}
             seen.add(src)
             citations.append({"title": src.split("/")[-1], "url": "", "type": "private_kb"})
     return {"answer": answer, "source_used": "private_kb", "citations": citations, "trace": add_trace(state, "Answer generation -> PRIVATE KB")}
-
-def generate_from_web(state: AgentState):
     answer = llm().invoke(f"""
 You are an enterprise IT support copilot. The private company KB was insufficient.
 Answer ONLY from the web evidence below. Clearly say this is external web information and may need IT validation before changing company-managed systems.
