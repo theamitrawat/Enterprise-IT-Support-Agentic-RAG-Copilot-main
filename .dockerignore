@@ -1,0 +1,49 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pycache
+
+# Virtual environment — never copy into image
+.venv/
+venv/
+env/
+
+# Secrets — never bake into image
+.env
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+
+# Runtime data — should come from mounted volumes or be empty
+data/audit.db
+uploads/*
+!uploads/.gitkeep
+
+# Kiro agent output
+.agents/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docs (not needed at runtime)
+docs/
+
+# Test files
+tests/
+
+# Jupyter notebooks (not needed at runtime)
+Agentic-RAG-demo/
+
+# Render config (not needed inside container)
+render.yaml
+
+# Lock files (deps already installed)
+uv.lock
