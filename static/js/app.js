@@ -56,14 +56,13 @@ function escapeHtml(s = "") {
   );
 }
 
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
 // Render markdown safely for AI output
 function renderMarkdown(text = "") {
   marked.setOptions({ breaks: true, gfm: true });
   return marked.parse(text);
 }
-
-// Plain-text accumulation for streaming; render only on finalize
-let _streamRaw = "";
 
 function showChat() {
   welcomeEl.style.display = "none";
@@ -143,7 +142,7 @@ function closeTraceDrawer() {
   traceOverlay.classList.remove("show");
 }
 
-/* ── Main ask function (SSE streaming) ────────────────── */
+/* ── Main ask function (POST + client-side typewriter) ── */
 async function askAgent(question) {
   addUserMessage(question);
   questionEl.value = "";
@@ -153,57 +152,33 @@ async function askAgent(question) {
   const { textEl, metaEl } = addAiShell();
   showThinking(textEl);
 
-  const traceLog = [];
-  let sourceUsed  = "";
-  let citations   = [];
-  let streamText  = "";
-  let thinkingRemoved = false;
   try {
-    const url = `/api/chat/stream?question=${encodeURIComponent(question)}`;
-    const es  = new EventSource(url);
-
-    await new Promise((resolve, reject) => {
-      es.onmessage = (e) => {
-        if (e.data === "[DONE]") { es.close(); resolve(); return; }
-
-        let evt;
-        try { evt = JSON.parse(e.data); } catch { return; }
-
-        if (evt.type === "trace") {
-          traceLog.push(evt.content);
-
-        } else if (evt.type === "meta") {
-          sourceUsed = evt.source_used || "";
-          citations  = evt.citations   || [];
-
-        } else if (evt.type === "token") {
-          // First token — remove thinking dots
-          if (!thinkingRemoved) {
-            textEl.innerHTML = "";
-            thinkingRemoved = true;
-          }
-          streamText += evt.content;
-          // During streaming show plain text + cursor (avoids flashing markdown symbols)
-          textEl.innerHTML = escapeHtml(streamText).replace(/\n/g, "<br>")
-            + '<span class="cursor"></span>';
-          scrollBottom();
-
-        } else if (evt.type === "done") {
-          sourceUsed = evt.source_used || sourceUsed;
-          citations  = evt.citations   || citations;
-
-        } else if (evt.type === "error") {
-          reject(new Error(evt.content));
-        }
-      };
-
-      es.onerror = () => { es.close(); reject(new Error("Stream connection failed")); };
+    // Use plain POST — works everywhere including Render/proxies
+    // SSE/EventSource is unreliable behind reverse proxies on free hosting
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question }),
     });
 
-    // Finalize — remove cursor, render markdown
-    textEl.innerHTML = renderMarkdown(streamText);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Request failed");
 
-    // Render meta row
+    const answer     = data.answer      || "";
+    const sourceUsed = data.source_used || "";
+    const citations  = data.citations   || [];
+    const traceLog   = data.trace       || [];
+
+    // Remove thinking dots
+    textEl.innerHTML = "";
+
+    // Typewriter effect — stream words client-side from the full response
+    await typewriterEffect(textEl, answer);
+
+    // Render final markdown
+    textEl.innerHTML = renderMarkdown(answer);
+
+    // Build meta row
     const sourceLabel = sourceUsed
       ? `<span class="source-tag">
            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
@@ -228,18 +203,10 @@ async function askAgent(question) {
     if (citeHtml) metaEl.insertAdjacentHTML("afterend", citeHtml);
     metaEl.style.display = "flex";
 
-    // Trace button handler
     const traceButton = document.getElementById("open-trace-btn");
     if (traceButton) {
       traceButton.addEventListener("click", () => openTrace(traceLog, sourceUsed));
     }
-
-    // Write audit (fire-and-forget)
-    fetch("/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question }),
-    }).catch(() => {});  // audit only, ignore errors
 
   } catch (err) {
     textEl.innerHTML = `<span style="color:#f28b82">Something went wrong: ${escapeHtml(err.message)}</span>`;
@@ -247,6 +214,20 @@ async function askAgent(question) {
     sendBtn.disabled = false;
     questionEl.focus();
     scrollBottom();
+  }
+}
+
+/* ── Typewriter effect ────────────────────────────────── */
+async function typewriterEffect(textEl, fullText) {
+  const words = fullText.split(" ");
+  let displayed = "";
+  for (let i = 0; i < words.length; i++) {
+    displayed += (i === 0 ? "" : " ") + words[i];
+    textEl.innerHTML = escapeHtml(displayed).replace(/\n/g, "<br>")
+      + '<span class="cursor"></span>';
+    scrollBottom();
+    // Slight delay between words — feels natural, not too slow
+    await sleep(18);
   }
 }
 
