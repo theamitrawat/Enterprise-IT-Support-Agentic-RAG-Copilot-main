@@ -155,11 +155,16 @@ async function askAgent(question) {
   try {
     // Use plain POST — works everywhere including Render/proxies
     // SSE/EventSource is unreliable behind reverse proxies on free hosting
+    const controller = new AbortController();
+    const timeoutId  = setTimeout(() => controller.abort(), 120000); // 2 min timeout
+
     const res = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ question }),
+      signal: controller.signal,
     });
+    clearTimeout(timeoutId);
 
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || "Request failed");
@@ -209,7 +214,10 @@ async function askAgent(question) {
     }
 
   } catch (err) {
-    textEl.innerHTML = `<span style="color:#f28b82">Something went wrong: ${escapeHtml(err.message)}</span>`;
+    const msg = err.name === "AbortError"
+      ? "Request timed out. The server may be waking from sleep — please try again."
+      : `Something went wrong: ${escapeHtml(err.message)}`;
+    textEl.innerHTML = `<span style="color:#f28b82">${msg}</span>`;
   } finally {
     sendBtn.disabled = false;
     questionEl.focus();
