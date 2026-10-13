@@ -58,7 +58,6 @@ function escapeHtml(s = "") {
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-// Render markdown safely for AI output
 function renderMarkdown(text = "") {
   marked.setOptions({ breaks: true, gfm: true });
   return marked.parse(text);
@@ -93,7 +92,7 @@ function addUserMessage(text) {
   scrollBottom();
 }
 
-/* ── Add AI message shell (returns content div) ───────── */
+/* ── Add AI message shell ─────────────────────────────── */
 function addAiShell() {
   const row = document.createElement("div");
   row.className = "msg-row ai";
@@ -113,18 +112,16 @@ function addAiShell() {
   };
 }
 
-/* ── Show thinking dots ───────────────────────────────── */
 function showThinking(textEl) {
   textEl.innerHTML = `<div class="thinking-dots"><span></span><span></span><span></span></div>`;
 }
 
-/* ── Scroll to bottom ─────────────────────────────────── */
 function scrollBottom() {
   const main = document.getElementById("chatMain");
   main.scrollTop = main.scrollHeight;
 }
 
-/* ── Render trace drawer ──────────────────────────────── */
+/* ── Trace drawer ─────────────────────────────────────── */
 function openTrace(steps, source) {
   traceSteps.innerHTML = steps
     .map(s => `<div class="trace-step">${escapeHtml(s)}</div>`)
@@ -142,7 +139,37 @@ function closeTraceDrawer() {
   traceOverlay.classList.remove("show");
 }
 
-/* ── Main ask function (POST + client-side typewriter) ── */
+/* ── Build meta row helper ────────────────────────────── */
+function buildMeta(metaEl, sourceUsed, traceLog, citations) {
+  const sourceLabel = sourceUsed
+    ? `<span class="source-tag">
+         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+         ${escapeHtml(sourceUsed.replace(/_/g, " "))}
+       </span>` : "";
+
+  const traceLabel = traceLog.length
+    ? `<button class="trace-btn" id="open-trace-btn">
+         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+         View trace
+       </button>` : "";
+
+  const citeHtml = citations.length
+    ? `<div class="citations-list"><strong style="font-size:12px;color:var(--text-dim)">Sources</strong>${
+        citations.map(c => c.url
+          ? `<a href="${escapeHtml(c.url)}" target="_blank" rel="noopener">${escapeHtml(c.title)}</a>`
+          : escapeHtml(c.title)
+        ).join("")
+      }</div>` : "";
+
+  metaEl.innerHTML = sourceLabel + traceLabel;
+  if (citeHtml) metaEl.insertAdjacentHTML("afterend", citeHtml);
+  if (sourceLabel || traceLabel) metaEl.style.display = "flex";
+
+  const traceButton = document.getElementById("open-trace-btn");
+  if (traceButton) traceButton.addEventListener("click", () => openTrace(traceLog, sourceUsed));
+}
+
+/* ── Main ask function ────────────────────────────────── */
 async function askAgent(question) {
   addUserMessage(question);
   questionEl.value = "";
@@ -152,98 +179,115 @@ async function askAgent(question) {
   const { textEl, metaEl } = addAiShell();
   showThinking(textEl);
 
+  const traceLog  = [];
+  let sourceUsed  = "";
+  let citations   = [];
+  let streamText  = "";
+  let thinkingDone = false;
+
+  // Try SSE streaming first (sends bytes immediately — keeps Render proxy alive)
+  // Falls back to plain POST if SSE fails (e.g. browser blocks EventSource)
+  let usedSSE = false;
+
   try {
-    // Use plain POST — works everywhere including Render/proxies
-    // SSE/EventSource is unreliable behind reverse proxies on free hosting
-    const controller = new AbortController();
-    const timeoutId  = setTimeout(() => controller.abort(), 120000); // 2 min timeout
+    const url = `/api/chat/stream?question=${encodeURIComponent(question)}`;
+    const es  = new EventSource(url);
+    usedSSE   = true;
 
-    const res = await fetch("/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question }),
-      signal: controller.signal,
+    await new Promise((resolve, reject) => {
+      // 90-second watchdog — Render free tier can be slow on cold start
+      const watchdog = setTimeout(() => {
+        es.close();
+        reject(new Error("Request timed out. The server may be waking from sleep — please try again in a moment."));
+      }, 90000);
+
+      es.onmessage = (e) => {
+        if (e.data === "[DONE]") { clearTimeout(watchdog); es.close(); resolve(); return; }
+
+        let evt;
+        try { evt = JSON.parse(e.data); } catch { return; }
+
+        if (evt.type === "trace") {
+          traceLog.push(evt.content);
+
+        } else if (evt.type === "meta") {
+          sourceUsed = evt.source_used || "";
+          citations  = evt.citations   || [];
+
+        } else if (evt.type === "token") {
+          if (!thinkingDone) { textEl.innerHTML = ""; thinkingDone = true; }
+          streamText += evt.content;
+          // Plain text while streaming to avoid flashing markdown symbols
+          textEl.innerHTML = escapeHtml(streamText).replace(/\n/g, "<br>")
+            + '<span class="cursor"></span>';
+          scrollBottom();
+
+        } else if (evt.type === "done") {
+          sourceUsed = evt.source_used || sourceUsed;
+          citations  = evt.citations   || citations;
+
+        } else if (evt.type === "error") {
+          clearTimeout(watchdog);
+          reject(new Error(evt.content || "Agent error"));
+        }
+      };
+
+      es.onerror = () => {
+        clearTimeout(watchdog);
+        es.close();
+        // If we already got tokens, treat connection close as normal completion
+        if (streamText) { resolve(); } else { reject(new Error("SSE_FAILED")); }
+      };
     });
-    clearTimeout(timeoutId);
-
-    // Read raw text first so we can show useful errors if JSON parse fails
-    const rawText = await res.text();
-    let data;
-    try {
-      data = JSON.parse(rawText);
-    } catch {
-      // Server returned non-JSON — show the actual response body for debugging
-      throw new Error(`Server returned non-JSON (status ${res.status}): ${rawText.slice(0, 300)}`);
-    }
-    if (!res.ok) throw new Error(data.detail || "Request failed");
-
-    const answer     = data.answer      || "";
-    const sourceUsed = data.source_used || "";
-    const citations  = data.citations   || [];
-    const traceLog   = data.trace       || [];
-
-    // Remove thinking dots
-    textEl.innerHTML = "";
-
-    // Typewriter effect — stream words client-side from the full response
-    await typewriterEffect(textEl, answer);
 
     // Render final markdown
-    textEl.innerHTML = renderMarkdown(answer);
-
-    // Build meta row
-    const sourceLabel = sourceUsed
-      ? `<span class="source-tag">
-           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-           ${escapeHtml(sourceUsed.replace(/_/g, " "))}
-         </span>` : "";
-
-    const traceLabel = traceLog.length
-      ? `<button class="trace-btn" id="open-trace-btn">
-           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-           View trace
-         </button>` : "";
-
-    const citeHtml = citations.length
-      ? `<div class="citations-list"><strong style="font-size:12px;color:var(--text-dim)">Sources</strong>${
-          citations.map(c => c.url
-            ? `<a href="${escapeHtml(c.url)}" target="_blank" rel="noopener">${escapeHtml(c.title)}</a>`
-            : escapeHtml(c.title)
-          ).join("")
-        }</div>` : "";
-
-    metaEl.innerHTML = sourceLabel + traceLabel;
-    if (citeHtml) metaEl.insertAdjacentHTML("afterend", citeHtml);
-    metaEl.style.display = "flex";
-
-    const traceButton = document.getElementById("open-trace-btn");
-    if (traceButton) {
-      traceButton.addEventListener("click", () => openTrace(traceLog, sourceUsed));
-    }
+    textEl.innerHTML = renderMarkdown(streamText || "Sorry, I could not generate a response.");
+    buildMeta(metaEl, sourceUsed, traceLog, citations);
 
   } catch (err) {
-    const msg = err.name === "AbortError"
-      ? "Request timed out. The server may be waking from sleep — please try again."
-      : `Something went wrong: ${escapeHtml(err.message)}`;
-    textEl.innerHTML = `<span style="color:#f28b82">${msg}</span>`;
+
+    // SSE failed before any tokens — fall back to plain POST
+    if (err.message === "SSE_FAILED" || !usedSSE) {
+      try {
+        if (!thinkingDone) showThinking(textEl);
+
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ question }),
+        });
+
+        const rawText = await res.text();
+        let data;
+        try { data = JSON.parse(rawText); }
+        catch { throw new Error(`Server error (${res.status}): ${rawText.slice(0, 200) || "empty response"}`); }
+
+        if (!res.ok) throw new Error(data.detail || "Request failed");
+
+        const answer = data.answer || "";
+        textEl.innerHTML = "";
+        // Typewriter effect for POST fallback
+        for (const word of answer.split(" ")) {
+          streamText += (streamText ? " " : "") + word;
+          textEl.innerHTML = escapeHtml(streamText).replace(/\n/g, "<br>") + '<span class="cursor"></span>';
+          scrollBottom();
+          await sleep(18);
+        }
+        textEl.innerHTML = renderMarkdown(answer);
+        buildMeta(metaEl, data.source_used || "", data.trace || [], data.citations || []);
+
+      } catch (fallbackErr) {
+        textEl.innerHTML = `<span style="color:#f28b82">${escapeHtml(fallbackErr.message)}</span>`;
+      }
+
+    } else {
+      // Real error (timeout, agent error, etc.)
+      textEl.innerHTML = `<span style="color:#f28b82">${escapeHtml(err.message)}</span>`;
+    }
   } finally {
     sendBtn.disabled = false;
     questionEl.focus();
     scrollBottom();
-  }
-}
-
-/* ── Typewriter effect ────────────────────────────────── */
-async function typewriterEffect(textEl, fullText) {
-  const words = fullText.split(" ");
-  let displayed = "";
-  for (let i = 0; i < words.length; i++) {
-    displayed += (i === 0 ? "" : " ") + words[i];
-    textEl.innerHTML = escapeHtml(displayed).replace(/\n/g, "<br>")
-      + '<span class="cursor"></span>';
-    scrollBottom();
-    // Slight delay between words — feels natural, not too slow
-    await sleep(18);
   }
 }
 

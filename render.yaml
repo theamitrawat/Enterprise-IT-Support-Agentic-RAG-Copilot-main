@@ -20,6 +20,6 @@ services:
       - key: EMBEDDING_MODEL
         value: all-MiniLM-L6-v2
       - key: GROQ_MODEL
-        value: openai/gpt-oss-20b
+        value: llama3-8b-8192
       - key: APP_ENV
         value: production

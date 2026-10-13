@@ -14,6 +14,7 @@ settings = get_settings()
 _llm = None
 _web_search = None
 
+
 def llm():
     global _llm
     if _llm is None:
@@ -23,9 +24,11 @@ def llm():
             model=settings.groq_model,
             temperature=0,
             groq_api_key=settings.groq_api_key,
-            request_timeout=25,   # fail fast — stay under Render's 30s proxy limit
+            timeout=25,      # fail fast — stay under Render's 30s proxy limit
+            max_retries=1,
         )
     return _llm
+
 
 def web_search_tool():
     global _web_search
@@ -41,8 +44,10 @@ def web_search_tool():
         )
     return _web_search
 
+
 def add_trace(state: AgentState, message: str):
     return [*state.get("trace", []), message]
+
 
 def is_simple_chat(question: str) -> bool:
     text = question.strip().lower().strip(string.punctuation + " ")
@@ -56,6 +61,7 @@ def is_simple_chat(question: str) -> bool:
         "okay",
     }
     return text in simple_messages or text.startswith(("hello ", "hi ", "hey "))
+
 
 def route_question(state: AgentState):
     if is_simple_chat(state["question"]):
@@ -72,16 +78,20 @@ Return valid JSON like {{"route":"kb"}}.
 """)
     return {"source_used": decision.route, "trace": add_trace(state, f"Router -> {decision.route.upper()}")}
 
+
 def route_after_router(state: AgentState) -> Literal["retrieve_kb", "direct_answer"]:
     return "retrieve_kb" if state["source_used"] == "kb" else "direct_answer"
+
 
 def retrieve_kb(state: AgentState):
     docs = get_retriever().invoke(state["current_query"])
     return {"kb_docs": docs, "trace": add_trace(state, f"Private KB retrieval -> {len(docs)} chunks")}
 
+
 def grade_kb(state: AgentState):
     grader = llm().with_structured_output(EvidenceGrade, method="json_mode")
-    context = "\n\n".join(f"Source: {d.metadata.get('source','unknown')}\n{d.page_content}" for d in state["kb_docs"])
+    context = "\n\n".join(
+        f"Source: {d.metadata.get('source','unknown')}\n{d.page_content}" for d in state["kb_docs"])
     grade = grader.invoke(f"""
 You grade evidence for an enterprise IT support assistant.
 Question: {state['question']}
@@ -91,6 +101,7 @@ Otherwise return weak. JSON: {{"grade":"good"}} or {{"grade":"weak"}}.
 """)
     return {"kb_grade": grade.grade, "trace": add_trace(state, f"KB evidence grade -> {grade.grade.upper()}")}
 
+
 def after_kb(state: AgentState) -> Literal["generate_from_kb", "search_web"]:
     return "generate_from_kb" if state["kb_grade"] == "good" else "search_web"def search_web(state: AgentState):
     result = web_search_tool().invoke({"query": state["current_query"]})
@@ -99,9 +110,11 @@ def after_kb(state: AgentState) -> Literal["generate_from_kb", "search_web"]:
         if result.get("answer"):
             lines.append("Search answer: " + result["answer"])
         for item in result.get("results", []):
-            title, url, content = item.get("title", ""), item.get("url", ""), item.get("content", "")
+            title, url, content = item.get("title", ""), item.get(
+                "url", ""), item.get("content", "")
             lines.append(f"Title: {title}\nURL: {url}\nContent: {content}")
-            citations.append({"title": title or url, "url": url, "type": "web"})
+            citations.append(
+                {"title": title or url, "url": url, "type": "web"})
     else:
         lines.append(str(result))
     return {
@@ -110,6 +123,7 @@ def after_kb(state: AgentState) -> Literal["generate_from_kb", "search_web"]:
         "source_used": "web",
         "trace": add_trace(state, "Web fallback -> Tavily search"),
     }
+
 
 def grade_web(state: AgentState):
     grader = llm().with_structured_output(EvidenceGrade, method="json_mode")
@@ -121,12 +135,14 @@ Return valid JSON like {{"grade":"good"}}.
 """)
     return {"web_grade": grade.grade, "trace": add_trace(state, f"Web evidence grade -> {grade.grade.upper()}")}
 
+
 def after_web(state: AgentState) -> Literal["generate_from_web", "rewrite_query", "insufficient"]:
     if state["web_grade"] == "good":
         return "generate_from_web"
     if state["retry_count"] < settings.max_retries:
         return "rewrite_query"
     return "insufficient"
+
 
 def rewrite_query(state: AgentState):
     rewritten = llm().invoke(f"""
@@ -140,8 +156,10 @@ Question: {state['question']}
         "trace": add_trace(state, f"Query rewrite -> {rewritten}"),
     }
 
+
 def generate_from_kb(state: AgentState):
-    context = "\n\n".join(f"[Source: {d.metadata.get('source','unknown')}]\n{d.page_content}" for d in state["kb_docs"])
+    context = "\n\n".join(
+        f"[Source: {d.metadata.get('source','unknown')}]\n{d.page_content}" for d in state["kb_docs"])
     answer = llm().invoke(f"""
 You are an enterprise IT support copilot. Answer ONLY from the private company KB below.
 Be concise, actionable, and safe. If steps are present, present them clearly.
@@ -156,12 +174,16 @@ Question: {state['question']}\n\nPrivate KB:\n{context}
             seen.add(src)
             citations.append({"title": src.split("/")[-1], "url": "", "type": "private_kb"})
     return {"answer": answer, "source_used": "private_kb", "citations": citations, "trace": add_trace(state, "Answer generation -> PRIVATE KB")}
+
+
+def generate_from_web(state: AgentState):
     answer = llm().invoke(f"""
 You are an enterprise IT support copilot. The private company KB was insufficient.
 Answer ONLY from the web evidence below. Clearly say this is external web information and may need IT validation before changing company-managed systems.
 Question: {state['question']}\n\nWeb evidence:\n{state['web_results']}
 """).content
     return {"answer": answer, "source_used": "web_search", "trace": add_trace(state, "Answer generation -> WEB SEARCH")}
+
 
 def direct_answer(state: AgentState):
     if is_simple_chat(state["question"]):
@@ -171,8 +193,10 @@ def direct_answer(state: AgentState):
             "trace": add_trace(state, "Direct response -> no retrieval"),
         }
 
-    answer = llm().invoke(f"Respond briefly and naturally to: {state['question']}").content
+    answer = llm().invoke(
+        f"Respond briefly and naturally to: {state['question']}").content
     return {"answer": answer, "source_used": "direct", "trace": add_trace(state, "Direct response -> no retrieval")}
+
 
 def insufficient(state: AgentState):
     return {
@@ -180,6 +204,7 @@ def insufficient(state: AgentState):
         "source_used": "insufficient_evidence",
         "trace": add_trace(state, "Stopped -> insufficient reliable evidence"),
     }
+
 
 def build_graph():
     graph = StateGraph(AgentState)
@@ -216,7 +241,9 @@ def build_graph():
     graph.add_edge("insufficient", END)
     return graph.compile()
 
+
 agent_graph = build_graph()
+
 
 def ask(question: str):
     initial: AgentState = {
@@ -237,9 +264,9 @@ def ask(question: str):
 
 async def ask_stream(question: str):
     """
-    Async generator that yields SSE-style dicts.
-    Runs the full LangGraph pipeline, then streams the final answer token-by-token.
-    Intermediate trace steps are yielded as 'trace' events so the UI updates live.
+    Async generator — runs the full LangGraph pipeline in a thread pool,
+    then streams the answer token-by-token so Render's proxy sees bytes
+    immediately and keeps the connection alive.
     """
     import asyncio
 
@@ -257,39 +284,29 @@ async def ask_stream(question: str):
         "citations": [],
     }
 
-    # Run all non-generation nodes synchronously in a thread so we don't block the event loop
-    loop = asyncio.get_event_loop()
-
-    # Collect trace events as the graph runs using stream mode
-    # We run up to (but not including) the generation node, then stream the final LLM call
-    def run_graph_until_generate():
-        """Run full pipeline, return state just before final answer generation."""
+    def run_graph():
         return agent_graph.invoke(initial)
 
-    # Run the full pipeline in a thread pool to not block async
-    result = await loop.run_in_executor(None, run_graph_until_generate)
+    # get_running_loop() is the correct call inside an async context (Python 3.10+)
+    loop   = asyncio.get_running_loop()
+    result = await loop.run_in_executor(None, run_graph)
 
-    # Yield trace events first
+    # Yield trace steps first — these arrive before the answer
     for step in result.get("trace", []):
         yield {"type": "trace", "content": step}
-        await asyncio.sleep(0)  # yield control
+        await asyncio.sleep(0)
 
-    # Yield metadata
     yield {
         "type": "meta",
         "source_used": result.get("source_used", ""),
         "citations": result.get("citations", []),
     }
 
-    # Stream the answer token by token to simulate streaming feel
-    # (Groq is very fast; we stream char-by-char with tiny delay for the typing effect)
+    # Stream answer word-by-word for typing effect
     answer = result.get("answer", "")
-
-    # Stream in small word-sized chunks for natural feel
-    words = answer.split(" ")
+    words  = answer.split(" ")
     for i, word in enumerate(words):
-        chunk = word + (" " if i < len(words) - 1 else "")
-        yield {"type": "token", "content": chunk}
-        await asyncio.sleep(0.012)  # ~80 words/sec typing speed
+        yield {"type": "token", "content": word + (" " if i < len(words) - 1 else "")}
+        await asyncio.sleep(0.012)
 
     yield {"type": "done", "source_used": result.get("source_used", ""), "citations": result.get("citations", [])}
