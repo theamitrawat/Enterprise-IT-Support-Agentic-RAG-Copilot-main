@@ -103,7 +103,10 @@ Otherwise return weak. JSON: {{"grade":"good"}} or {{"grade":"weak"}}.
 
 
 def after_kb(state: AgentState) -> Literal["generate_from_kb", "search_web"]:
-    return "generate_from_kb" if state["kb_grade"] == "good" else "search_web"def search_web(state: AgentState):
+    return "generate_from_kb" if state["kb_grade"] == "good" else "search_web"
+
+
+def search_web(state: AgentState):
     result = web_search_tool().invoke({"query": state["current_query"]})
     lines, citations = [], []
     if isinstance(result, dict):
