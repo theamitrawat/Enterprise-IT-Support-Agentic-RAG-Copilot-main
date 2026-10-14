@@ -18,10 +18,10 @@ const traceSource  = document.getElementById("traceSource");
 const closeTrace   = document.getElementById("closeTrace");
 
 /* Upload modal */
-const uploadModal  = document.getElementById("uploadModal");
-const fileInput    = document.getElementById("fileInput");
-const fileLabel    = document.getElementById("fileLabel");
-const fileDrop     = document.getElementById("fileDrop");
+const uploadModal = document.getElementById("uploadModal");
+const fileInput   = document.getElementById("fileInput");
+const fileLabel   = document.getElementById("fileLabel");
+const fileDrop    = document.getElementById("fileDrop");
 
 /* ── Theme ────────────────────────────────────────────── */
 const savedTheme = localStorage.getItem("theme") || "dark";
@@ -33,11 +33,8 @@ themeToggle.addEventListener("click", () => {
   localStorage.setItem("theme", next);
 });
 
-/* ── Sidebar toggle ───────────────────────────────────── */
-menuBtn.addEventListener("click", () => {
-  sidebar.classList.toggle("open");
-  sidebar.classList.toggle("collapsed");
-});
+/* ── Sidebar ──────────────────────────────────────────── */
+menuBtn.addEventListener("click", () => sidebar.classList.toggle("open"));
 
 newChatBtn.addEventListener("click", () => {
   messagesEl.innerHTML = "";
@@ -68,7 +65,11 @@ function showChat() {
   messagesEl.style.display = "flex";
 }
 
-/* ── Auto-resize textarea ─────────────────────────────── */
+function scrollBottom() {
+  document.getElementById("chatMain").scrollTop = 99999;
+}
+
+/* ── Textarea auto-resize ─────────────────────────────── */
 questionEl.addEventListener("input", () => {
   sendBtn.disabled = !questionEl.value.trim();
   questionEl.style.height = "auto";
@@ -82,7 +83,7 @@ questionEl.addEventListener("keydown", e => {
   }
 });
 
-/* ── Add user message ─────────────────────────────────── */
+/* ── Add messages ─────────────────────────────────────── */
 function addUserMessage(text) {
   showChat();
   const row = document.createElement("div");
@@ -92,23 +93,28 @@ function addUserMessage(text) {
   scrollBottom();
 }
 
-/* ── Add AI message shell ─────────────────────────────── */
 function addAiShell() {
   const row = document.createElement("div");
   row.className = "msg-row ai";
+  // Use unique IDs per message to avoid querySelector conflicts
+  const uid = Date.now();
   row.innerHTML = `
     <div class="ai-avatar">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" fill="currentColor"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+        <circle cx="12" cy="12" r="3" fill="currentColor"/>
+        <path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"
+          stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      </svg>
     </div>
     <div class="ai-content">
-      <div class="ai-text" id="streaming-text"></div>
-      <div class="ai-meta" id="ai-meta" style="display:none"></div>
+      <div class="ai-text" id="text-${uid}"></div>
+      <div class="ai-meta" id="meta-${uid}" style="display:none"></div>
     </div>`;
   messagesEl.appendChild(row);
   scrollBottom();
   return {
-    textEl: row.querySelector("#streaming-text"),
-    metaEl: row.querySelector("#ai-meta"),
+    textEl: row.querySelector(`#text-${uid}`),
+    metaEl: row.querySelector(`#meta-${uid}`),
   };
 }
 
@@ -116,16 +122,9 @@ function showThinking(textEl) {
   textEl.innerHTML = `<div class="thinking-dots"><span></span><span></span><span></span></div>`;
 }
 
-function scrollBottom() {
-  const main = document.getElementById("chatMain");
-  main.scrollTop = main.scrollHeight;
-}
-
 /* ── Trace drawer ─────────────────────────────────────── */
 function openTrace(steps, source) {
-  traceSteps.innerHTML = steps
-    .map(s => `<div class="trace-step">${escapeHtml(s)}</div>`)
-    .join("");
+  traceSteps.innerHTML = steps.map(s => `<div class="trace-step">${escapeHtml(s)}</div>`).join("");
   traceSource.textContent = source || "—";
   traceDrawer.classList.add("open");
   traceOverlay.classList.add("show");
@@ -139,37 +138,50 @@ function closeTraceDrawer() {
   traceOverlay.classList.remove("show");
 }
 
-/* ── Build meta row helper ────────────────────────────── */
+/* ── Meta row ─────────────────────────────────────────── */
 function buildMeta(metaEl, sourceUsed, traceLog, citations) {
   const sourceLabel = sourceUsed
     ? `<span class="source-tag">
-         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-         ${escapeHtml(sourceUsed.replace(/_/g, " "))}
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+        ${escapeHtml(sourceUsed.replace(/_/g, " "))}
        </span>` : "";
 
+  const traceId = "trace-btn-" + Date.now();
   const traceLabel = traceLog.length
-    ? `<button class="trace-btn" id="open-trace-btn">
-         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-         View trace
+    ? `<button class="trace-btn" id="${traceId}">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        View trace
        </button>` : "";
 
   const citeHtml = citations.length
     ? `<div class="citations-list"><strong style="font-size:12px;color:var(--text-dim)">Sources</strong>${
         citations.map(c => c.url
           ? `<a href="${escapeHtml(c.url)}" target="_blank" rel="noopener">${escapeHtml(c.title)}</a>`
-          : escapeHtml(c.title)
-        ).join("")
+          : escapeHtml(c.title)).join("")
       }</div>` : "";
 
   metaEl.innerHTML = sourceLabel + traceLabel;
   if (citeHtml) metaEl.insertAdjacentHTML("afterend", citeHtml);
   if (sourceLabel || traceLabel) metaEl.style.display = "flex";
 
-  const traceButton = document.getElementById("open-trace-btn");
-  if (traceButton) traceButton.addEventListener("click", () => openTrace(traceLog, sourceUsed));
+  if (traceLog.length) {
+    document.getElementById(traceId)?.addEventListener("click", () => openTrace(traceLog, sourceUsed));
+  }
 }
 
-/* ── Main ask function ────────────────────────────────── */
+/* ── Typewriter ───────────────────────────────────────── */
+async function typewriter(textEl, text) {
+  const words = text.split(" ");
+  let built = "";
+  for (let i = 0; i < words.length; i++) {
+    built += (i === 0 ? "" : " ") + words[i];
+    textEl.innerHTML = escapeHtml(built).replace(/\n/g, "<br>") + '<span class="cursor"></span>';
+    scrollBottom();
+    await sleep(15);
+  }
+}
+
+/* ── Core ask function — plain POST, always works ─────── */
 async function askAgent(question) {
   addUserMessage(question);
   questionEl.value = "";
@@ -179,111 +191,46 @@ async function askAgent(question) {
   const { textEl, metaEl } = addAiShell();
   showThinking(textEl);
 
-  const traceLog  = [];
-  let sourceUsed  = "";
-  let citations   = [];
-  let streamText  = "";
-  let thinkingDone = false;
-
-  // Try SSE streaming first (sends bytes immediately — keeps Render proxy alive)
-  // Falls back to plain POST if SSE fails (e.g. browser blocks EventSource)
-  let usedSSE = false;
-
   try {
-    const url = `/api/chat/stream?question=${encodeURIComponent(question)}`;
-    const es  = new EventSource(url);
-    usedSSE   = true;
-
-    await new Promise((resolve, reject) => {
-      // 90-second watchdog
-      const watchdog = setTimeout(() => {
-        es.close();
-        reject(new Error("Request timed out. Please try again."));
-      }, 90000);
-
-      es.onmessage = (e) => {
-        if (e.data === "[DONE]") { clearTimeout(watchdog); es.close(); resolve(); return; }
-
-        let evt;
-        try { evt = JSON.parse(e.data); } catch { return; }
-
-        if (evt.type === "trace") {
-          traceLog.push(evt.content);
-
-        } else if (evt.type === "meta") {
-          sourceUsed = evt.source_used || "";
-          citations  = evt.citations   || [];
-
-        } else if (evt.type === "token") {
-          if (!thinkingDone) { textEl.innerHTML = ""; thinkingDone = true; }
-          streamText += evt.content;
-          // Plain text while streaming to avoid flashing markdown symbols
-          textEl.innerHTML = escapeHtml(streamText).replace(/\n/g, "<br>")
-            + '<span class="cursor"></span>';
-          scrollBottom();
-
-        } else if (evt.type === "done") {
-          sourceUsed = evt.source_used || sourceUsed;
-          citations  = evt.citations   || citations;
-
-        } else if (evt.type === "error") {
-          clearTimeout(watchdog);
-          reject(new Error(evt.content || "Agent error"));
-        }
-      };
-
-      es.onerror = () => {
-        clearTimeout(watchdog);
-        es.close();
-        // If we already got tokens, treat connection close as normal completion
-        if (streamText) { resolve(); } else { reject(new Error("SSE_FAILED")); }
-      };
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question }),
     });
 
-    // Render final markdown
-    textEl.innerHTML = renderMarkdown(streamText || "Sorry, I could not generate a response.");
-    buildMeta(metaEl, sourceUsed, traceLog, citations);
+    // Always read as text first — never assume JSON
+    const raw = await res.text();
+
+    if (!raw || raw.trim() === "") {
+      throw new Error("Server returned an empty response. Please try again.");
+    }
+
+    let data;
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      throw new Error("Server error: " + raw.slice(0, 150));
+    }
+
+    if (!res.ok) {
+      throw new Error(data.detail || `Server error ${res.status}`);
+    }
+
+    const answer   = data.answer      || "No answer returned.";
+    const source   = data.source_used || "";
+    const trace    = data.trace       || [];
+    const citations = data.citations  || [];
+
+    // Animate the answer word by word
+    await typewriter(textEl, answer);
+
+    // Render as markdown once animation is done
+    textEl.innerHTML = renderMarkdown(answer);
+
+    buildMeta(metaEl, source, trace, citations);
 
   } catch (err) {
-
-    // SSE failed before any tokens — fall back to plain POST
-    if (err.message === "SSE_FAILED" || !usedSSE) {
-      try {
-        if (!thinkingDone) showThinking(textEl);
-
-        const res = await fetch("/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ question }),
-        });
-
-        const rawText = await res.text();
-        let data;
-        try { data = JSON.parse(rawText); }
-        catch { throw new Error(`Server error (${res.status}): ${rawText.slice(0, 200) || "empty response"}`); }
-
-        if (!res.ok) throw new Error(data.detail || "Request failed");
-
-        const answer = data.answer || "";
-        textEl.innerHTML = "";
-        // Typewriter effect for POST fallback
-        for (const word of answer.split(" ")) {
-          streamText += (streamText ? " " : "") + word;
-          textEl.innerHTML = escapeHtml(streamText).replace(/\n/g, "<br>") + '<span class="cursor"></span>';
-          scrollBottom();
-          await sleep(18);
-        }
-        textEl.innerHTML = renderMarkdown(answer);
-        buildMeta(metaEl, data.source_used || "", data.trace || [], data.citations || []);
-
-      } catch (fallbackErr) {
-        textEl.innerHTML = `<span style="color:#f28b82">${escapeHtml(fallbackErr.message)}</span>`;
-      }
-
-    } else {
-      // Real error (timeout, agent error, etc.)
-      textEl.innerHTML = `<span style="color:#f28b82">${escapeHtml(err.message)}</span>`;
-    }
+    textEl.innerHTML = `<span style="color:#f28b82">⚠ ${escapeHtml(err.message)}</span>`;
   } finally {
     sendBtn.disabled = false;
     questionEl.focus();
@@ -299,9 +246,9 @@ chatForm.addEventListener("submit", e => {
 });
 
 /* ── Suggestion cards ─────────────────────────────────── */
-document.querySelectorAll(".suggestion-card").forEach(btn => {
-  btn.addEventListener("click", () => askAgent(btn.dataset.q));
-});
+document.querySelectorAll(".suggestion-card").forEach(btn =>
+  btn.addEventListener("click", () => askAgent(btn.dataset.q))
+);
 
 /* ── Upload modal ─────────────────────────────────────── */
 document.getElementById("openUpload").addEventListener("click", () => {
