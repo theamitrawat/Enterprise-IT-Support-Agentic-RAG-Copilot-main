@@ -25,11 +25,25 @@ def health():
 
 @router.post("/chat")
 async def chat(payload: ChatRequest):
+    logger.info(f"Chat request: {payload.question[:80]}")
     try:
-        # Run synchronous LangGraph pipeline in a thread pool
-        # so the async event loop stays free and uvicorn stays responsive
-        loop   = asyncio.get_running_loop()
-        result = await loop.run_in_executor(None, ask, payload.question)
+        loop = asyncio.get_running_loop()
+
+        # Hard 60-second timeout on the entire pipeline
+        # If Pinecone or Groq hangs, we get a clean error instead of infinite loading
+        try:
+            result = await asyncio.wait_for(
+                loop.run_in_executor(None, ask, payload.question),
+                timeout=60.0
+            )
+        except asyncio.TimeoutError:
+            logger.error("Chat pipeline timed out after 60s")
+            raise HTTPException(
+                status_code=504,
+                detail="The agent took too long to respond. This usually means Pinecone or Groq API is slow. Please try again."
+            )
+
+        logger.info(f"Chat done — source: {result.get('source_used')}")
 
         try:
             write_audit(payload.question, result["source_used"], result.get("trace", []))
@@ -43,6 +57,9 @@ async def chat(payload: ChatRequest):
             "citations":       result.get("citations", []),
             "rewritten_query": result.get("current_query", payload.question),
         }
+
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.exception("Chat request failed")
         raise HTTPException(status_code=500, detail=str(exc)) from exc

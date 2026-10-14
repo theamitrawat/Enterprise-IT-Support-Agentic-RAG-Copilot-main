@@ -84,11 +84,14 @@ def route_after_router(state: AgentState) -> Literal["retrieve_kb", "direct_answ
 
 
 def retrieve_kb(state: AgentState):
+    logger.info("Retrieving from Pinecone KB...")
     docs = get_retriever().invoke(state["current_query"])
+    logger.info(f"Pinecone returned {len(docs)} chunks")
     return {"kb_docs": docs, "trace": add_trace(state, f"Private KB retrieval -> {len(docs)} chunks")}
 
 
 def grade_kb(state: AgentState):
+    logger.info("Grading KB evidence...")
     grader = llm().with_structured_output(EvidenceGrade, method="json_mode")
     context = "\n\n".join(
         f"Source: {d.metadata.get('source','unknown')}\n{d.page_content}" for d in state["kb_docs"])
@@ -107,6 +110,7 @@ def after_kb(state: AgentState) -> Literal["generate_from_kb", "search_web"]:
 
 
 def search_web(state: AgentState):
+    logger.info("Searching web with Tavily...")
     result = web_search_tool().invoke({"query": state["current_query"]})
     lines, citations = [], []
     if isinstance(result, dict):
@@ -161,6 +165,7 @@ Question: {state['question']}
 
 
 def generate_from_kb(state: AgentState):
+    logger.info("Generating answer from KB...")
     context = "\n\n".join(
         f"[Source: {d.metadata.get('source','unknown')}]\n{d.page_content}" for d in state["kb_docs"])
     answer = llm().invoke(f"""
