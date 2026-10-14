@@ -11,8 +11,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Pre-download the HuggingFace embedding model into /root/.cache
-# HF_HOME tells sentence-transformers exactly where to save it
+# Pre-download the HuggingFace embedding model during build
 ENV HF_HOME=/root/.cache/huggingface
 RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
 
@@ -23,7 +22,7 @@ FROM python:3.10-slim AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Create a real (non-system) user so ~ resolves to /home/appuser
+# Real user with home directory
 RUN groupadd --gid 1001 appgroup && \
     useradd --uid 1001 --gid appgroup --create-home appuser
 
@@ -33,12 +32,10 @@ WORKDIR /app
 COPY --from=builder /usr/local/lib/python3.10/site-packages /usr/local/lib/python3.10/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
-# Copy HuggingFace model cache — must land in appuser's home
-# HF_HOME must match so sentence-transformers finds it without re-downloading
+# Copy HuggingFace model cache
 COPY --from=builder /root/.cache/huggingface /home/appuser/.cache/huggingface
 RUN chown -R appuser:appgroup /home/appuser/.cache
 
-# Tell HuggingFace/sentence-transformers where the cache is
 ENV HF_HOME=/home/appuser/.cache/huggingface
 ENV TRANSFORMERS_CACHE=/home/appuser/.cache/huggingface
 
@@ -46,7 +43,10 @@ ENV TRANSFORMERS_CACHE=/home/appuser/.cache/huggingface
 COPY --chown=appuser:appgroup . .
 
 # Create writable runtime directories
-RUN mkdir -p data uploads && chown -R appuser:appgroup data uploads
+# data/chroma_db — ChromaDB vector store (persists KB)
+# data/         — SQLite audit log
+# uploads/      — uploaded documents
+RUN mkdir -p data/chroma_db uploads && chown -R appuser:appgroup data uploads
 
 USER appuser
 

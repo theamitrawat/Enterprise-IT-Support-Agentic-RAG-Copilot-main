@@ -228,6 +228,9 @@ __marimo__/
 uploads/*
 !uploads/.gitkeep
 
+# ChromaDB vector store (populated at runtime via ingest)
+data/chroma_db/
+
 # SQLite audit database (runtime data)
 data/audit.db
 

@@ -84,9 +84,9 @@ def route_after_router(state: AgentState) -> Literal["retrieve_kb", "direct_answ
 
 
 def retrieve_kb(state: AgentState):
-    logger.info("Retrieving from Pinecone KB...")
+    logger.info("Retrieving from ChromaDB...")
     docs = get_retriever().invoke(state["current_query"])
-    logger.info(f"Pinecone returned {len(docs)} chunks")
+    logger.info(f"ChromaDB returned {len(docs)} chunks")
     return {"kb_docs": docs, "trace": add_trace(state, f"Private KB retrieval -> {len(docs)} chunks")}
 
 

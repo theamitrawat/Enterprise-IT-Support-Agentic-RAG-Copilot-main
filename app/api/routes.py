@@ -40,7 +40,7 @@ async def chat(payload: ChatRequest):
             logger.error("Chat pipeline timed out after 60s")
             raise HTTPException(
                 status_code=504,
-                detail="The agent took too long to respond. This usually means Pinecone or Groq API is slow. Please try again."
+                detail="The agent took too long to respond. Please try again."
             )
 
         logger.info(f"Chat done — source: {result.get('source_used')}")

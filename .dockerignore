@@ -21,8 +21,9 @@ env/
 .vscode/
 .idea/
 
-# Runtime data — should come from mounted volumes or be empty
+# Runtime data — ephemeral, populated at runtime
 data/audit.db
+data/chroma_db/
 uploads/*
 !uploads/.gitkeep
 
