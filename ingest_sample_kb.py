@@ -6,7 +6,7 @@ from app.rag.vectorstore import add_documents, CHROMA_DIR
 settings = get_settings()
 
 print("Step 1/4 — Loading settings...")
-print(f"  Embedding model : {settings.embedding_model}")
+print(f"  Embedding model : BAAI/bge-small-en-v1.5 (FastEmbed)")
 print(f"  ChromaDB path   : {CHROMA_DIR}")
 print(f"  KB dir          : {settings.sample_kb_dir}")
 
@@ -25,7 +25,7 @@ chunks = chunk_documents(all_docs)
 print(f"  Created {len(chunks)} chunks")
 
 print("\nStep 4/4 — Loading embedding model + saving to ChromaDB...")
-print("  (First run loads the model — takes ~60s)")
+print("  Downloading FastEmbed model on first run (~25MB). Please wait...")
 ids = add_documents(chunks)
 
 print(f"\nDone! Indexed {len(files)} files -> {len(chunks)} chunks -> {len(ids)} vectors")
