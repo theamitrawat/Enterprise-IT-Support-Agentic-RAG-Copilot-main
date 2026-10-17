@@ -18,6 +18,9 @@ FROM python:3.10-slim AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
+RUN apt-get update && apt-get install -y --no-install-recommends util-linux \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN groupadd --gid 1001 appgroup && \
     useradd --uid 1001 --gid appgroup --create-home appuser
 
@@ -28,17 +31,18 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 
 COPY --chown=appuser:appgroup . .
 
-# data/chroma_db — Chroma vector store (populated via ingest)
-# data/           — SQLite audit log
-# uploads/        — uploaded documents
-RUN mkdir -p data/chroma_db uploads && chown -R appuser:appgroup data uploads
-
-USER appuser
+# Local runtime data; Render mounts its persistent disk at /var/data.
+RUN mkdir -p data/chroma_db uploads /var/data && \
+    chown -R appuser:appgroup data uploads /var/data
 
 ENV PORT=8080
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/health')"
+    CMD python -c "import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:'+os.getenv('PORT','8080')+'/api/health', timeout=5)"
 
-CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod 755 /usr/local/bin/docker-entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+CMD ["python", "run.py"]
