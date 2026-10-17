@@ -228,7 +228,9 @@ __marimo__/
 uploads/*
 !uploads/.gitkeep
 
-# FAISS vector index (populated at runtime via ingest)
+# Chroma vector database (created automatically at runtime)
+data/chroma_db/
+# Keep existing user-local FAISS data out of version control; the app no longer reads it.
 data/faiss_index/
 
 # SQLite audit database (runtime data)

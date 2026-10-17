@@ -22,6 +22,7 @@ const uploadModal = document.getElementById("uploadModal");
 const fileInput   = document.getElementById("fileInput");
 const fileLabel   = document.getElementById("fileLabel");
 const fileDrop    = document.getElementById("fileDrop");
+let requestInFlight = false;
 
 /* ── Theme ────────────────────────────────────────────── */
 const savedTheme = localStorage.getItem("theme") || "dark";
@@ -56,6 +57,9 @@ function escapeHtml(s = "") {
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 function renderMarkdown(text = "") {
+  if (typeof marked === "undefined") {
+    return escapeHtml(text).replace(/\n/g, "<br>");
+  }
   marked.setOptions({ breaks: true, gfm: true });
   return marked.parse(text);
 }
@@ -71,7 +75,7 @@ function scrollBottom() {
 
 /* ── Textarea auto-resize ─────────────────────────────── */
 questionEl.addEventListener("input", () => {
-  sendBtn.disabled = !questionEl.value.trim();
+  sendBtn.disabled = requestInFlight || !questionEl.value.trim();
   questionEl.style.height = "auto";
   questionEl.style.height = Math.min(questionEl.scrollHeight, 160) + "px";
 });
@@ -183,6 +187,8 @@ async function typewriter(textEl, text) {
 
 /* ── Core ask function — plain POST, always works ─────── */
 async function askAgent(question) {
+  if (requestInFlight) return;
+  requestInFlight = true;
   addUserMessage(question);
   questionEl.value = "";
   questionEl.style.height = "auto";
@@ -190,12 +196,15 @@ async function askAgent(question) {
 
   const { textEl, metaEl } = addAiShell();
   showThinking(textEl);
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), 100000);
 
   try {
     const res = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ question }),
+      signal: controller.signal,
     });
 
     // Always read as text first — never assume JSON
@@ -230,9 +239,14 @@ async function askAgent(question) {
     buildMeta(metaEl, source, trace, citations);
 
   } catch (err) {
-    textEl.innerHTML = `<span style="color:#f28b82">⚠ ${escapeHtml(err.message)}</span>`;
+    const message = err.name === "AbortError"
+      ? "The request timed out. Please try again or check the server logs."
+      : err.message || "The request failed. Please try again.";
+    textEl.innerHTML = `<span style="color:#f28b82">⚠ ${escapeHtml(message)}</span>`;
   } finally {
-    sendBtn.disabled = false;
+    window.clearTimeout(timeoutId);
+    requestInFlight = false;
+    sendBtn.disabled = !questionEl.value.trim();
     questionEl.focus();
     scrollBottom();
   }
@@ -241,6 +255,7 @@ async function askAgent(question) {
 /* ── Form submit ──────────────────────────────────────── */
 chatForm.addEventListener("submit", e => {
   e.preventDefault();
+  if (requestInFlight) return;
   const q = questionEl.value.trim();
   if (q) askAgent(q);
 });

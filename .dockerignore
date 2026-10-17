@@ -21,8 +21,9 @@ env/
 .vscode/
 .idea/
 
-# Runtime data — ephemeral, populated at runtime
+# Runtime data — ephemeral, created at runtime
 data/audit.db
+data/chroma_db/
 data/faiss_index/
 uploads/*
 !uploads/.gitkeep

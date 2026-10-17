@@ -4,6 +4,7 @@ from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from docx import Document as DocxDocument
+from app.rag.vectorstore import add_documents
 
 
 SUPPORTED = {".pdf", ".txt", ".md", ".docx"}
@@ -27,3 +28,12 @@ def load_file(path: Path) -> list[Document]:
 def chunk_documents(docs: Iterable[Document]) -> list[Document]:
     splitter = RecursiveCharacterTextSplitter(chunk_size=900, chunk_overlap=120, add_start_index=True)
     return splitter.split_documents(list(docs))
+
+
+def ingest_paths(paths: Iterable[Path]) -> tuple[list[Document], list[Document], list[str]]:
+    documents: list[Document] = []
+    for path in paths:
+        documents.extend(load_file(path))
+    chunks = chunk_documents(documents)
+    identifiers = add_documents(chunks)
+    return documents, chunks, identifiers

@@ -14,10 +14,13 @@ class Settings(BaseSettings):
 
     # Web search
     tavily_api_key: str = ""
+    web_search_timeout_seconds: int = 12
 
     # Retrieval
     top_k: int = 4
     max_retries: int = 1
+    chroma_db_path: str = str(BASE_DIR / "data" / "chroma_db")
+    chroma_collection_name: str = "enterprise_it_support"
 
     # Security
     admin_api_key: str = "change-me"

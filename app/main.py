@@ -1,4 +1,7 @@
+import asyncio
+import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -7,7 +10,7 @@ from app.api.routes import router
 from app.core.config import get_settings, BASE_DIR
 from app.core.logging import configure_logging
 from app.services.audit import init_db
-import logging
+from app.services.ingestion import SUPPORTED, ingest_paths
 
 configure_logging()
 settings = get_settings()
@@ -16,23 +19,48 @@ init_db()
 logger = logging.getLogger(__name__)
 
 
+def prepare_knowledge_base() -> None:
+    from app.rag.vectorstore import get_document_count
+
+    count = get_document_count()
+    if count:
+        logger.info("Chroma knowledge base already contains %d chunks", count)
+        return
+
+    sample_dir = Path(settings.sample_kb_dir)
+    upload_dir = Path(settings.upload_dir)
+    source_files = []
+    for directory in (sample_dir, upload_dir):
+        if directory.is_dir():
+            source_files.extend(
+                path for path in directory.iterdir()
+                if path.is_file() and path.suffix.lower() in SUPPORTED
+            )
+    source_files.sort()
+    if not source_files:
+        logger.warning("No documents found to initialize the Chroma knowledge base")
+        return
+
+    documents, chunks, identifiers = ingest_paths(source_files)
+    logger.info(
+        "Initialized Chroma knowledge base with %d documents and %d chunks",
+        len(documents),
+        len(identifiers),
+    )
+    if not chunks:
+        logger.warning("Knowledge base source files contained no indexable text")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Pre-load FAISS index at startup so first request is instant
-    import asyncio
-    logger.info("Pre-loading FAISS vector store...")
-    try:
-        loop = asyncio.get_running_loop()
-        from app.rag.vectorstore import get_vectorstore
-        await loop.run_in_executor(None, get_vectorstore)
-        logger.info("FAISS vector store ready")
-    except Exception as e:
-        logger.warning(f"FAISS pre-load skipped: {e}")
+    logger.info("Preparing persistent Chroma knowledge base...")
+    await asyncio.to_thread(prepare_knowledge_base)
+    logger.info("Chroma knowledge base ready")
 
     if not settings.groq_api_key:
         logger.warning("GROQ_API_KEY is not set — chat will fail")
     if not settings.tavily_api_key:
-        logger.warning("TAVILY_API_KEY is not set — web search fallback will fail")
+        logger.info("TAVILY_API_KEY is not set — web search fallback is disabled")
     if settings.admin_api_key == "change-me":
         logger.warning("ADMIN_API_KEY is still default — change it before use")
     yield

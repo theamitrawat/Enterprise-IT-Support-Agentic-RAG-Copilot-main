@@ -1,53 +1,46 @@
-"""
-Vector store using FAISS + HashEmbeddings.
-FAISS = Facebook AI Similarity Search — fast, lightweight, no server needed.
-Vectors saved to disk, loaded instantly on restart.
-No heavy downloads, no external API.
-"""
+"""Persistent Chroma vector store with deterministic, local embeddings."""
 import hashlib
+import logging
 import math
 import threading
-import logging
-import pickle
 from pathlib import Path
-from langchain_community.vectorstores import FAISS
-from langchain_core.embeddings import Embeddings
+
 from langchain_core.documents import Document
+from langchain_core.embeddings import Embeddings
+from langchain_chroma import Chroma
+
 from app.core.config import get_settings
 
 settings = get_settings()
-logger   = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
-_lock        = threading.Lock()
-_embeddings  = None
-_vectorstore = None
+_lock = threading.RLock()
+_embeddings: "HashEmbeddings | None" = None
+_vectorstore: Chroma | None = None
 
-FAISS_DIR  = Path(__file__).resolve().parents[2] / "data" / "faiss_index"
-EMBED_DIM  = 384
+CHROMA_DIR = Path(settings.chroma_db_path)
+COLLECTION_NAME = settings.chroma_collection_name
+EMBED_DIM = 384
 
 
 class HashEmbeddings(Embeddings):
-    """
-    Zero-download embeddings using character trigram + word hashing.
-    Deterministic — same text always gives same 384-dim vector.
-    No model files, no downloads, instant startup.
-    """
+    """Deterministic, zero-download character-trigram and word embeddings."""
 
     def _embed(self, text: str) -> list[float]:
-        vec  = [0.0] * EMBED_DIM
+        vector = [0.0] * EMBED_DIM
         text = text.lower().strip()
-        for i in range(max(1, len(text) - 2)):
-            gram = text[i:i+3]
-            h    = int(hashlib.sha256(gram.encode()).hexdigest(), 16)
-            vec[h % EMBED_DIM] += 1.0
+        for index in range(max(1, len(text) - 2)):
+            trigram = text[index:index + 3]
+            digest = int(hashlib.sha256(trigram.encode()).hexdigest(), 16)
+            vector[digest % EMBED_DIM] += 1.0
         for word in text.split():
-            h = int(hashlib.sha256(word.encode()).hexdigest(), 16)
-            vec[h % EMBED_DIM] += 2.0
-        norm = math.sqrt(sum(x * x for x in vec)) or 1.0
-        return [x / norm for x in vec]
+            digest = int(hashlib.sha256(word.encode()).hexdigest(), 16)
+            vector[digest % EMBED_DIM] += 2.0
+        norm = math.sqrt(sum(value * value for value in vector)) or 1.0
+        return [value / norm for value in vector]
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        return [self._embed(t) for t in texts]
+        return [self._embed(text) for text in texts]
 
     def embed_query(self, text: str) -> list[float]:
         return self._embed(text)
@@ -59,54 +52,62 @@ def get_embeddings() -> HashEmbeddings:
         with _lock:
             if _embeddings is None:
                 _embeddings = HashEmbeddings()
-                logger.info("HashEmbeddings ready — zero download")
+                logger.info("Local hash embeddings ready")
     return _embeddings
 
 
-def get_vectorstore() -> FAISS:
+def get_vectorstore() -> Chroma:
     global _vectorstore
     if _vectorstore is None:
         with _lock:
             if _vectorstore is None:
-                if FAISS_DIR.exists():
-                    # Load existing index from disk
-                    logger.info(f"Loading FAISS index from {FAISS_DIR}")
-                    _vectorstore = FAISS.load_local(
-                        str(FAISS_DIR),
-                        get_embeddings(),
-                        allow_dangerous_deserialization=True,
-                    )
-                    logger.info("FAISS index loaded")
-                else:
-                    logger.info("No FAISS index found — will be created on first ingest")
-                    _vectorstore = None
+                CHROMA_DIR.mkdir(parents=True, exist_ok=True)
+                _vectorstore = Chroma(
+                    collection_name=COLLECTION_NAME,
+                    embedding_function=get_embeddings(),
+                    persist_directory=str(CHROMA_DIR),
+                    collection_metadata={"hnsw:space": "cosine"},
+                )
+                logger.info("Chroma collection ready at %s", CHROMA_DIR)
     return _vectorstore
 
 
+def get_document_count() -> int:
+    return get_vectorstore()._collection.count()
+
+
 def get_retriever():
-    vs = get_vectorstore()
-    if vs is None:
-        raise RuntimeError(
-            "Knowledge base is empty. Run: python ingest_sample_kb.py"
-        )
-    return vs.as_retriever(search_kwargs={"k": settings.top_k})
+    return get_vectorstore().as_retriever(search_kwargs={"k": settings.top_k})
 
 
 def add_documents(chunks: list[Document]) -> list[str]:
-    global _vectorstore
-    emb = get_embeddings()
-    FAISS_DIR.mkdir(parents=True, exist_ok=True)
+    if not chunks:
+        return []
 
+    identifiers = [
+        hashlib.sha256(
+            (
+                f"{doc.metadata.get('source', '')}|"
+                f"{doc.metadata.get('page', '')}|"
+                f"{doc.metadata.get('start_index', '')}|"
+                f"{doc.page_content}"
+            ).encode("utf-8")
+        ).hexdigest()
+        for doc in chunks
+    ]
+    store = get_vectorstore()
     with _lock:
-        if _vectorstore is None:
-            # Create new FAISS index
-            _vectorstore = FAISS.from_documents(chunks, emb)
-        else:
-            # Add to existing index
-            _vectorstore.add_documents(chunks)
-
-        # Save to disk
-        _vectorstore.save_local(str(FAISS_DIR))
-        logger.info(f"FAISS index saved to {FAISS_DIR}")
-
-    return [str(i) for i in range(len(chunks))]
+        sources = {
+            str(doc.metadata["source"])
+            for doc in chunks
+            if doc.metadata.get("source")
+        }
+        existing_ids: set[str] = set()
+        for source in sources:
+            existing_ids.update(store.get(where={"source": source}, include=[])["ids"])
+        store.add_documents(chunks, ids=identifiers)
+        stale_ids = existing_ids.difference(identifiers)
+        if stale_ids:
+            store.delete(ids=list(stale_ids))
+    logger.info("Indexed %d chunks in Chroma", len(chunks))
+    return identifiers

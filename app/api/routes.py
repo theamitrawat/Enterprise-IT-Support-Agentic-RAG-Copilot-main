@@ -5,7 +5,7 @@ from fastapi import APIRouter, UploadFile, File, HTTPException, Header
 from pydantic import BaseModel, Field
 from app.core.config import get_settings
 from app.rag.workflow import ask
-from app.rag.vectorstore import add_documents
+from app.rag.vectorstore import add_documents, get_document_count
 from app.services.ingestion import load_file, chunk_documents, SUPPORTED
 from app.services.audit import write_audit
 
@@ -20,7 +20,13 @@ class ChatRequest(BaseModel):
 
 @router.get("/health")
 def health():
-    return {"status": "ok", "service": settings.app_name}
+    return {
+        "status": "ok",
+        "service": settings.app_name,
+        "knowledge_base_chunks": get_document_count(),
+        "groq_configured": bool(settings.groq_api_key),
+        "web_search_configured": bool(settings.tavily_api_key),
+    }
 
 
 @router.post("/chat")
@@ -83,9 +89,12 @@ async def ingest(
     dest = upload_dir / Path(file.filename).name
     dest.write_bytes(await file.read())
 
-    docs   = load_file(dest)
-    chunks = chunk_documents(docs)
-    ids    = add_documents(chunks)
+    docs = await asyncio.to_thread(load_file, dest)
+    chunks = await asyncio.to_thread(chunk_documents, docs)
+    if not chunks:
+        dest.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="The uploaded file contains no readable text")
+    ids = await asyncio.to_thread(add_documents, chunks)
 
     return {
         "message":     "Document indexed successfully",

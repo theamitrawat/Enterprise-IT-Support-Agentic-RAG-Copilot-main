@@ -31,8 +31,8 @@ Question
 |---|---|
 | Agent Workflow | LangGraph |
 | LLM | Groq (`openai/gpt-oss-20b`) |
-| Embeddings | HuggingFace `all-MiniLM-L6-v2` (local, no API cost) |
-| Vector DB | FAISS (local disk — no API, no downloads, instant) |
+| Embeddings | Deterministic local hash embeddings (no model download/API) |
+| Vector DB | ChromaDB (persistent local database) |
 | Web Search | Tavily |
 | Backend | FastAPI + Uvicorn |
 | Frontend | Vanilla HTML / CSS / JavaScript |
@@ -50,7 +50,7 @@ it-support-rag-copilot/
 │   ├── core/config.py         # Centralized settings
 │   ├── core/logging.py        # Logging setup
 │   ├── rag/state.py           # LangGraph TypedDict state
-│   ├── rag/vectorstore.py     # ChromaDB + HuggingFace embeddings
+│   ├── rag/vectorstore.py     # Persistent ChromaDB + local embeddings
 │   ├── rag/workflow.py        # 10-node Agentic RAG graph
 │   ├── services/audit.py      # SQLite audit log
 │   ├── services/ingestion.py  # PDF/TXT/MD/DOCX loader + chunker
@@ -77,7 +77,7 @@ it-support-rag-copilot/
 
 ### Prerequisites
 - Python 3.10+
-- Free API accounts: [Groq](https://console.groq.com), [Tavily](https://tavily.com)
+- A Groq API key for answer generation. Tavily is optional and enables external web fallback.
 - No Pinecone or any other vector DB account needed
 
 ### Step 1 — Clone and create virtual environment
@@ -101,17 +101,16 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-> First run downloads the `all-MiniLM-L6-v2` embedding model (~90 MB). Subsequent runs are instant.
+No embedding model download is required.
 
 ### Step 3 — Configure environment
 
-Copy `.env.example` to `.env` and fill in your API keys:
+Copy `.env.example` to `.env`. Set `GROQ_API_KEY` to enable answer generation; `TAVILY_API_KEY` is optional and enables web fallback:
 
 ```env
 GROQ_API_KEY=your_groq_api_key
-TAVILY_API_KEY=your_tavily_api_key
+TAVILY_API_KEY=your_tavily_api_key  # optional; only used when private KB evidence is weak
 
-EMBEDDING_MODEL=all-MiniLM-L6-v2
 GROQ_MODEL=openai/gpt-oss-20b
 
 ADMIN_API_KEY=your-secure-admin-key
@@ -124,7 +123,9 @@ APP_ENV=development
 python ingest_sample_kb.py
 ```
 
-This chunks the two sample IT documents and saves their vectors to ChromaDB locally in `data/chroma_db/`. Only needed once.
+The app automatically indexes the sample knowledge base (and supported documents already in `uploads/`) into ChromaDB on first startup. This command can also be run manually; re-running it safely updates existing chunks.
+
+The legacy `data/faiss_index/` is not loaded by the app. Re-ingest its original source documents into ChromaDB if it contains content that is not available under `data/sample_kb/` or `uploads/`.
 
 ### Step 5 — Start the server
 
@@ -184,7 +185,7 @@ docker build -t it-support-copilot .
 docker run -p 8080:8080 --env-file .env it-support-copilot
 ```
 
-> Note: When running in Docker, run `python ingest_sample_kb.py` inside the container after first start to populate ChromaDB.
+> The application automatically initializes ChromaDB from the bundled sample knowledge base when the database is empty.
 
 ---
 
