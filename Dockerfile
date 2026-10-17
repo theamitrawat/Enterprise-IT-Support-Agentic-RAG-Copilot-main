@@ -11,9 +11,6 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Pre-download the FastEmbed model during build so container starts instantly
-RUN python -c "from langchain_community.embeddings import FastEmbedEmbeddings; FastEmbedEmbeddings(model_name='BAAI/bge-small-en-v1.5')"
-
 
 # ── Stage 2: Runtime ──────────────────────────────────────
 FROM python:3.10-slim AS runtime
@@ -28,10 +25,6 @@ WORKDIR /app
 
 COPY --from=builder /usr/local/lib/python3.10/site-packages /usr/local/lib/python3.10/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
-
-# Copy FastEmbed model cache
-COPY --from=builder /root/.cache /home/appuser/.cache
-RUN chown -R appuser:appgroup /home/appuser/.cache
 
 COPY --chown=appuser:appgroup . .
 
