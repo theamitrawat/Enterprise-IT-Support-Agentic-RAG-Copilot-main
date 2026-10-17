@@ -15,8 +15,6 @@ class Settings(BaseSettings):
     # Web search
     tavily_api_key: str = ""
 
-    # Embeddings — using FastEmbed BAAI/bge-small-en-v1.5 (hardcoded in vectorstore.py)
-
     # Retrieval
     top_k: int = 4
     max_retries: int = 1
