@@ -1,15 +1,8 @@
 """
-Vector store using ChromaDB + character n-gram hashing embeddings.
-
-WHY: All local embedding models (sentence-transformers, FastEmbed) require
-downloading 90-400MB model files which is too slow on slow connections.
-
-This implementation uses deterministic character n-gram hashing to convert
-text to 384-dimensional vectors — zero downloads, instant startup, works
-offline. Quality is sufficient for a small KB (< 1000 documents).
-
-For production with large KBs, replace GroqEmbeddings with FastEmbedEmbeddings
-once the model has been downloaded and cached.
+Vector store using ChromaDB + HashEmbeddings.
+Zero downloads, instant startup, no external dependencies.
+Uses character n-gram + word hashing to generate 384-dim vectors.
+Sufficient quality for small knowledge bases (< 1000 documents).
 """
 import hashlib
 import math
@@ -33,22 +26,22 @@ EMBED_DIM  = 384
 
 class HashEmbeddings(Embeddings):
     """
-    Zero-download embeddings using character trigram hashing.
+    Deterministic embeddings using character trigram + word hashing.
     - No model files to download
     - Instant startup
-    - Deterministic — same text always gives same vector
-    - Good enough for small knowledge bases
+    - Works offline
+    - Same text always gives same vector
     """
 
     def _embed(self, text: str) -> list[float]:
         vec  = [0.0] * EMBED_DIM
         text = text.lower().strip()
-        # Character trigrams
+        # Character trigrams for sub-word similarity
         for i in range(max(1, len(text) - 2)):
             gram = text[i:i+3]
             h    = int(hashlib.sha256(gram.encode()).hexdigest(), 16)
             vec[h % EMBED_DIM] += 1.0
-        # Word unigrams (boost word-level similarity)
+        # Word unigrams for word-level similarity (weighted higher)
         for word in text.split():
             h = int(hashlib.sha256(word.encode()).hexdigest(), 16)
             vec[h % EMBED_DIM] += 2.0
@@ -69,7 +62,7 @@ def get_embeddings() -> HashEmbeddings:
         with _lock:
             if _embeddings is None:
                 _embeddings = HashEmbeddings()
-                logger.info("HashEmbeddings ready — no download needed")
+                logger.info("HashEmbeddings initialized — no download needed")
     return _embeddings
 
 

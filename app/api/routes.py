@@ -29,8 +29,6 @@ async def chat(payload: ChatRequest):
     try:
         loop = asyncio.get_running_loop()
 
-        # Hard 60-second timeout on the entire pipeline
-        # If Pinecone or Groq hangs, we get a clean error instead of infinite loading
         try:
             result = await asyncio.wait_for(
                 loop.run_in_executor(None, ask, payload.question),
