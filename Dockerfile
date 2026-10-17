@@ -28,7 +28,10 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 
 COPY --chown=appuser:appgroup . .
 
-RUN mkdir -p data/chroma_db uploads && chown -R appuser:appgroup data uploads
+# data/faiss_index — FAISS vector store (populated via ingest)
+# data/           — SQLite audit log
+# uploads/        — uploaded documents
+RUN mkdir -p data/faiss_index uploads && chown -R appuser:appgroup data uploads
 
 USER appuser
 

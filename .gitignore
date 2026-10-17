@@ -228,8 +228,8 @@ __marimo__/
 uploads/*
 !uploads/.gitkeep
 
-# ChromaDB vector store (populated at runtime via ingest)
-data/chroma_db/
+# FAISS vector index (populated at runtime via ingest)
+data/faiss_index/
 
 # SQLite audit database (runtime data)
 data/audit.db

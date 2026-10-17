@@ -23,7 +23,7 @@ env/
 
 # Runtime data — ephemeral, populated at runtime
 data/audit.db
-data/chroma_db/
+data/faiss_index/
 uploads/*
 !uploads/.gitkeep
 

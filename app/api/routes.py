@@ -32,10 +32,10 @@ async def chat(payload: ChatRequest):
         try:
             result = await asyncio.wait_for(
                 loop.run_in_executor(None, ask, payload.question),
-                timeout=60.0
+                timeout=90.0
             )
         except asyncio.TimeoutError:
-            logger.error("Chat pipeline timed out after 60s")
+            logger.error("Chat pipeline timed out after 90s")
             raise HTTPException(
                 status_code=504,
                 detail="The agent took too long to respond. Please try again."

@@ -1,16 +1,15 @@
 [project]
 name = "it-support-agentic-rag-copilot"
 version = "1.0.0"
-description = "An Agentic RAG copilot for enterprise IT support, built with LangGraph, Groq, ChromaDB, and FastAPI"
+description = "An Agentic RAG copilot for enterprise IT support, built with LangGraph, Groq, FAISS, and FastAPI"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "beautifulsoup4==4.15.0",
-    "chromadb==0.6.3",
+    "faiss-cpu==1.9.0",
     "fastapi==0.116.1",
     "jinja2==3.1.6",
     "langchain==1.3.16",
-    "langchain-chroma==0.2.4",
     "langchain-community==0.4.2",
     "langchain-core==1.6.0",
     "langchain-groq==1.1.3",

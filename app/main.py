@@ -18,7 +18,17 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup checks
+    # Pre-load FAISS index at startup so first request is instant
+    import asyncio
+    logger.info("Pre-loading FAISS vector store...")
+    try:
+        loop = asyncio.get_running_loop()
+        from app.rag.vectorstore import get_vectorstore
+        await loop.run_in_executor(None, get_vectorstore)
+        logger.info("FAISS vector store ready")
+    except Exception as e:
+        logger.warning(f"FAISS pre-load skipped: {e}")
+
     if not settings.groq_api_key:
         logger.warning("GROQ_API_KEY is not set — chat will fail")
     if not settings.tavily_api_key:
@@ -26,7 +36,6 @@ async def lifespan(app: FastAPI):
     if settings.admin_api_key == "change-me":
         logger.warning("ADMIN_API_KEY is still default — change it before use")
     yield
-    # Shutdown (nothing to clean up)
 
 
 app = FastAPI(title=settings.app_name, version="1.0.0", lifespan=lifespan)

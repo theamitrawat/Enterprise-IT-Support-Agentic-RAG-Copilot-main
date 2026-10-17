@@ -32,7 +32,7 @@ Question
 | Agent Workflow | LangGraph |
 | LLM | Groq (`openai/gpt-oss-20b`) |
 | Embeddings | HuggingFace `all-MiniLM-L6-v2` (local, no API cost) |
-| Vector DB | ChromaDB (local disk — no API, no cold starts) |
+| Vector DB | FAISS (local disk — no API, no downloads, instant) |
 | Web Search | Tavily |
 | Backend | FastAPI + Uvicorn |
 | Frontend | Vanilla HTML / CSS / JavaScript |
